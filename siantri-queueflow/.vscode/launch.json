@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "msedge",
+      "request": "launch",
+      "name": "Buka SIAntri (Edge)",
+      "url": "http://localhost:8080",
+      "webRoot": "${workspaceFolder}/web",
+      "preLaunchTask": "Jalankan SIAntri"
+    },
+    {
+      "type": "chrome",
+      "request": "launch",
+      "name": "Buka SIAntri (Chrome)",
+      "url": "http://localhost:8080",
+      "webRoot": "${workspaceFolder}/web",
+      "preLaunchTask": "Jalankan SIAntri"
+    }
+  ]
+}

@@ -1,0 +1,60 @@
+<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet"><link rel="stylesheet" href="style.css"><title>Dashboard</title></head><body><div class="wrap"><div id="nav"></div>
+<div id="need" class="card" hidden>Masuk dulu lewat halaman <a href="admin.html">Petugas</a> (butuh Supabase aktif).</div>
+<div id="dash" hidden>
+  <div id="demoNotice" class="demo-hint" style="margin-bottom:16px" hidden>
+    💡 <b>Mode Demo Aktif</b> — Menampilkan simulasi analitik antrean, peringatan (alert), dan prediksi beban.
+  </div>
+  <div class="row" style="justify-content:space-between;margin-bottom:8px">
+    <h1>Dashboard Live</h1>
+    <span class="pill called" style="font-size:13px">● Real-time</span>
+  </div>
+  <div class="grid" id="st" style="margin:16px 0"></div>
+  <div class="grid"><div class="card"><h3>Alert & Peringatan</h3><ul class="list" id="al"></ul></div><div class="card"><h3>Prediksi beban 8 jam ke depan</h3><ul class="list" id="fc"></ul></div></div>
+  <div class="card" style="margin-top:16px"><h3>Perbandingan cabang (7 hari terakhir)</h3><ul class="list" id="rg"></ul></div>
+</div></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="config.js"></script><script src="app.js"></script><script>
+document.getElementById('nav').innerHTML=nav('dashboard');
+let renderDash;
+(async()=>{
+  const {data:{session}}=await sb.auth.getSession();
+  const staff = session && !session.user.is_anonymous;
+  if (!isDemo && !staff) {
+    $('#need').hidden = false;
+    return;
+  }
+  $('#dash').hidden = false;
+  if (isDemo) $('#demoNotice').hidden = false;
+
+  renderDash = async () => {
+    await load();
+    const m = (await sb.rpc('branch_metrics', { p_branch: BRANCH })).data || {};
+    $('#st').innerHTML = [
+      ['Menunggu', m.waiting ?? 0],
+      ['Dilayani', m.serving ?? 0],
+      ['Selesai', m.served ?? 0],
+      ['Avg tunggu (mnt)', m.avg_wait_min ?? 0],
+      ['No-show %', (m.no_show_pct != null ? m.no_show_pct + '%' : '0%')],
+      ['Loket aktif', m.active_counters ?? 0]
+    ].map(([l,v]) => `<div class="stat"><b>${v}</b><span class="mu">${l}</span></div>`).join('');
+
+    const al = (await sb.from('alerts').select('*').eq('branch_id', BRANCH || 'b1').neq('status', 'resolved').order('created_at')).data || [];
+    $('#al').innerHTML = al.map(a => `<li><span>${a.severity==='critical'?'🔴':'🟠'} ${a.message}</span>${a.status==='open'?`<button class="btn ghost" onclick="ack('${a.id}')">Ack</button>`:'<span class="mu">direspon</span>'}</li>`).join('') || '<li class="mu">Tidak ada alert aktif.</li>';
+
+    const fc = (await sb.rpc('forecast', { p_branch: BRANCH })).data || [];
+    $('#fc').innerHTML = fc.map(r => `<li><span>${new Date(r.hour_ts).toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</span><b>${r.expected} tiket · ${r.counters_needed} loket</b></li>`).join('');
+
+    const rg = (await sb.rpc('branch_compare', { p_days: 7 })).data || [];
+    $('#rg').innerHTML = rg.map(r => `<li><span><b>${r.name}</b></span><span class="mu">avg ${r.avg_wait}m · p90 ${r.p90_wait}m · SLA ${r.sla_pct}% · CSAT ⭐ ${r.csat}</span></li>`).join('') || '<li class="mu">Khusus manager/admin.</li>';
+  };
+
+  live(renderDash);
+})();
+
+async function ack(id) {
+  const {data:{session}} = await sb.auth.getSession();
+  const uid = (session && session.user) ? session.user.id : 'demo-admin';
+  await sb.from('alerts').update({ status: 'acknowledged', acked_by: uid, acked_at: new Date().toISOString() }).eq('id', id);
+  toast('Alert berhasil di-ack', 'ok');
+  if (renderDash) renderDash();
+}
+</script></body></html>

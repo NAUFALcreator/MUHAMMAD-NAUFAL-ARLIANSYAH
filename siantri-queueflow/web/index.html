@@ -1,0 +1,165 @@
+<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet"><link rel="stylesheet" href="style.css"><title>Ambil Nomor Antrean</title></head><body><div class="wrap">
+<div id="nav"></div>
+
+<!-- Guest: belum login -->
+<div id="guest" hidden>
+  <h1>Ambil nomor antrean,<br>tanpa berdiri menunggu.</h1>
+  <p class="sub">Masuk atau daftar untuk mengambil nomor antrean digital, atau lanjutkan langsung sebagai tamu.</p>
+  <div class="row" style="gap:12px;margin-top:12px">
+    <a href="login.html" class="btn" style="display:inline-block;text-decoration:none">Masuk / Daftar Akun</a>
+    <button class="btn ghost" onclick="quickGuest()">Lanjut sebagai Tamu (Instan)</button>
+  </div>
+</div>
+
+<!-- Logged in: pilih layanan -->
+<div id="pick" hidden><h1>Ambil nomor antrean,<br>tanpa berdiri menunggu.</h1><p class="sub" id="greetSub"></p><div class="row" style="margin-bottom:16px"><label><input type="checkbox" id="prio"> Prioritas</label><label><input type="checkbox" id="rem"> Tiket remote (check-in 30 menit)</label></div><div class="grid" id="services"></div>
+
+<!-- Riwayat antrean -->
+<div class="history-section" id="historySection" hidden>
+  <h2>Riwayat antrean Anda</h2>
+  <ul class="list" id="historyList"></ul>
+</div>
+</div>
+
+<!-- Tiket aktif -->
+<div id="mine" hidden></div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="config.js"></script><script src="app.js"></script>
+<script>
+document.getElementById('nav').innerHTML = nav('index');
+let cust = getCustomerSession();
+let D = null, myId = localStorage.getItem('siantri_ticket');
+let _lastStatus = null;
+
+function quickGuest() {
+  const num = Math.floor(100 + Math.random() * 900);
+  const res = customerRegister('Pengunjung ' + num, 'tamu_' + Date.now() + '@siantri.com', '0812' + Math.floor(10000000 + Math.random()*90000000), 'tamu123');
+  if (res.data) {
+    cust = res.data;
+    location.reload();
+  }
+}
+
+function updateGuestBanner() {
+  const guestEl = document.getElementById('guest');
+  if (guestEl) guestEl.hidden = !!cust || !!myId;
+  const greetEl = document.getElementById('greetSub');
+  if (greetEl) {
+    greetEl.textContent = cust
+      ? `Halo, ${cust.name}! Pilih layanan di bawah untuk mendapatkan nomor antrean.`
+      : 'Pilih layanan di bawah untuk langsung mengambil nomor antrean (bisa tanpa akun).';
+  }
+}
+
+async function take(id){
+  if (!cust) {
+    const num = Math.floor(100 + Math.random() * 900);
+    const res = customerRegister('Pengunjung ' + num, 'tamu_' + Date.now() + '@siantri.com', '0812' + Math.floor(10000000 + Math.random()*90000000), 'tamu123');
+    if (res.data) cust = res.data;
+  }
+  await ensureUser();
+  const isPrio = $('#prio') && $('#prio').checked ? 1 : 0;
+  const isRem = $('#rem') && $('#rem').checked ? 'remote' : 'qr';
+  const {data, error} = await sb.rpc('issue_ticket', {
+    p_branch: BRANCH,
+    p_service: id,
+    p_priority: isPrio,
+    p_channel: isRem,
+    p_phone: (cust && cust.phone) || null
+  });
+  if(error) return toast('Gagal mengambil nomor: ' + error.message, 'bad');
+  myId = data.id;
+  localStorage.setItem('siantri_ticket', myId);
+  launchConfetti();
+  toast('Nomor antrean berhasil diambil! 🎫', 'ok');
+  requestNotification();
+  refresh();
+}
+
+async function cancel(){
+  if(!myId) return;
+  await sb.rpc('cancel_ticket', { p_ticket: myId });
+  toast('Antrean dibatalkan');
+  refresh();
+}
+
+function leave(){
+  localStorage.removeItem('siantri_ticket');
+  myId = null;
+  refresh();
+}
+
+function draw(){
+  if(!D) return;
+  updateGuestBanner();
+  const t = D.tickets.find(x => x.id === myId);
+
+  $('#pick').hidden = !!t;
+  $('#mine').hidden = !t;
+
+  if(!t){
+    if(myId) {
+      localStorage.removeItem('siantri_ticket');
+      myId = null;
+    }
+    $('#services').innerHTML = (D.services || []).map(s => `
+      <button class="card" onclick="take(${s.id})">
+        <div class="code">${s.code}</div>
+        <h3>${s.name}</h3>
+        <p class="mu">${waitingOf(D, s.id).length} orang menunggu · ±${s.avg_minutes} menit/orang</p>
+      </button>`).join('');
+
+    // Show history
+    const allTickets = (D.tickets || []).filter(t => t.status === 'done' || t.status === 'cancelled' || t.status === 'skipped');
+    if (allTickets.length > 0) {
+      $('#historySection').hidden = false;
+      const sorted = allTickets.sort((a,b) => (b.created_at||'').localeCompare(a.created_at||'')).slice(0, 8);
+      $('#historyList').innerHTML = sorted.map(t => {
+        const s = (D.services || []).find(x => x.id === t.service_id) || {};
+        const time = new Date(t.created_at).toLocaleString('id-ID', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'});
+        return `<li><span>${t.number} · ${s.name||'—'}</span><span><span class="pill ${t.status}">${LABEL[t.status]||t.status}</span> <span class="mu">${time}</span></span></li>`;
+      }).join('');
+    } else {
+      $('#historySection').hidden = true;
+    }
+    return;
+  }
+
+  // Active ticket
+  const s = (D.services || []).find(x => x.id === t.service_id) || {};
+  const c = (D.counters || []).find(x => String(x.id) === String(t.counter_id));
+  const ahead = waitingOf(D, t.service_id).filter(x => x.created_at < t.created_at).length;
+  const msg = t.status === 'called' ? `Giliran Anda! Menuju ${c ? c.name : 'loket'}.` :
+    t.status === 'waiting' ? `${ahead} orang di depan Anda · estimasi ${ahead * (s.avg_minutes || 5)} menit` : 'Antrean ini sudah berakhir.';
+
+  if (t.status === 'called' && _lastStatus !== 'called') {
+    notifyBrowser('Giliran Anda! 🎫', `Nomor ${t.number} silakan menuju ${c ? c.name : 'loket'}`);
+  }
+
+  if (t.status === 'done' && _lastStatus !== 'done') {
+    launchConfetti();
+    showRatingModal(t.id, t.number, () => { refresh(); });
+  }
+  _lastStatus = t.status;
+
+  $('#mine').innerHTML = `
+    <div class="ticket ${t.status}">
+      <span class="pill ${t.status}">${LABEL[t.status] || t.status}</span>
+      <div class="num">${t.number}</div>
+      <div class="tear">
+        <h3>${s.name || ''}</h3>
+        <p class="mu" style="margin:6px 0 18px">${msg}</p>
+        ${t.status === 'waiting'
+          ? '<button class="btn bad" onclick="cancel()">Batalkan antrean</button>'
+          : '<button class="btn" onclick="leave()">Ambil nomor lagi</button>'}
+      </div>
+    </div>`;
+}
+
+async function refresh(){
+  D = await load();
+  draw();
+}
+
+live(refresh);
+</script></body></html>

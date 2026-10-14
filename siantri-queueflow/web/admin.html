@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <title>Panel Petugas</title>
+</head>
+
+<body>
+  <div class="wrap">
+    <div id="nav"></div>
+    <div id="login" class="card" style="max-width:380px;margin:auto" hidden>
+      <h1 style="font-size:28px">Masuk petugas</h1>
+      <p class="sub" id="subText">Gunakan akun yang dibuat di Supabase Auth.</p>
+      <div id="demoAlert" hidden
+        style="margin-bottom:14px;padding:10px 12px;border-radius:8px;background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.25);font-size:13px;color:#a5b4fc;line-height:1.5">
+        💡 <b>Mode Demo Lokal Aktif</b><br>Email: <b>petugas@siantri.com</b><br>Sandi: <b>petugas123</b>
+      </div>
+      <input id="em" type="email" placeholder="Email" onkeydown="if(event.key==='Enter')$('#pw').focus()"><input id="pw"
+        type="password" placeholder="Kata sandi" onkeydown="if(event.key==='Enter')signIn()"><button class="btn"
+        style="width:100%" onclick="signIn()">Masuk</button>
+    </div>
+    <div id="panel" hidden>
+      <div class="row" style="justify-content:space-between;margin-bottom:20px">
+        <h1>Panel loket</h1><button class="btn ghost" onclick="signOut()">Keluar</button>
+      </div>
+      <div class="grid">
+        <div class="card">
+          <p class="mu">Loket aktif</p><select id="ctr" onchange="draw()" style="margin-top:8px"></select>
+          <p class="mu">Sedang dilayani</p>
+          <div class="big" id="cur">—</div>
+          <p class="mu" id="curSvc"></p>
+          <div class="row" style="margin-top:18px"><button class="btn ok" onclick="callNext()">Panggil
+              berikutnya</button><button class="btn" onclick="upd('recall')">Panggil ulang</button><button
+              class="btn warn" onclick="upd('skipped')">Lewati</button><button class="btn ghost"
+              onclick="upd('done')">Selesai</button></div>
+        </div>
+        <div class="card">
+          <h3>Hari ini</h3>
+          <div class="grid" id="stats" style="margin:14px 0"></div>
+          <h3>Antrean menunggu</h3>
+          <ul class="list" id="wl"></ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+  <script>
+    document.getElementById('nav').innerHTML = nav('admin');
+    let D = null;
+    async function gate() {
+      const { data: { session } } = await sb.auth.getSession();
+      const staff = session && !session.user.is_anonymous;
+      $('#login').hidden = !!staff;
+      $('#panel').hidden = !staff;
+      if (staff) {
+        live(refresh);
+      } else if (window.isDemo) {
+        $('#demoAlert').hidden = false;
+        if (!$('#em').value) $('#em').value = 'petugas@siantri.com';
+        if (!$('#pw').value) $('#pw').value = 'petugas123';
+      }
+    }
+    async function signIn() {
+      const em = $('#em').value.trim();
+      const pw = $('#pw').value;
+      if (!em || !pw) return toast('Harap isi email dan kata sandi');
+      const { error } = await sb.auth.signInWithPassword({ email: em, password: pw });
+      if (error) return toast('Login gagal: ' + (error.message || 'email atau kata sandi salah'));
+      location.reload();
+    }
+    async function signOut() { await sb.auth.signOut(); location.reload(); }
+    const cid = () => isDemo ? Number($('#ctr').value) : $('#ctr').value;
+    const current = () => (D && D.tickets) ? D.tickets.find(t => String(t.counter_id) === String(cid()) && t.status === 'called') : null;
+    async function callNext() { await sb.rpc('set_counter', { p_counter: cid(), p_status: 'available' }); const { data, error } = await sb.rpc('call_next', { p_counter: cid() }); if (error) toast(error.message); else toast(data ? 'Memanggil ' + data.number : 'Tidak ada antrean menunggu'); refresh(); }
+    async function upd(a) {
+      const t = current(); if (!t) return toast('Belum ada nomor yang dipanggil');
+      let r;
+      if (a === 'recall') r = await sb.rpc('recall_ticket', { p_ticket: t.id });
+      else if (a === 'skipped') r = await sb.rpc('no_show', { p_ticket: t.id });
+      else { if (t.raw !== 'serving') await sb.rpc('start_service', { p_ticket: t.id }); r = await sb.rpc('complete_ticket', { p_ticket: t.id }); }
+      if (r.error) toast(r.error.message); else toast((a === 'recall' ? 'Memanggil ulang ' : LABEL[a] + ': ') + t.number); refresh();
+    }
+    function draw() {
+      if (!D || !D.tickets) return;
+      const t = current(), s = t && D.services.find(x => x.id === t.service_id);
+      $('#cur').textContent = t ? t.number : '—'; $('#curSvc').textContent = s ? s.name : 'Belum ada yang dilayani';
+      const n = k => D.tickets.filter(x => x.status === k).length;
+      $('#stats').innerHTML = [['Menunggu', n('waiting')], ['Selesai', M.served != null ? M.served : n('done')], ['Lewat/Batal', (M.no_show_pct != null ? M.no_show_pct + '%' : n('skipped'))]].map(([l, v]) => `<div class="stat"><b>${v}</b><span class="mu">${l}</span></div>`).join('');
+      $('#wl').innerHTML = D.tickets.filter(x => x.status === 'waiting').slice(0, 8).map(x => `<li><span>${x.number}</span><span class="mu">${new Date(x.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span></li>`).join('') || '<li class="mu">Tidak ada antrean.</li>';
+    }
+    let M = {};
+    async function refresh() {
+      D = await load();
+      try {
+        const r = await sb.rpc('branch_metrics', { p_branch: BRANCH });
+        if (r && r.data) M = r.data;
+      } catch (e) { }
+      const sel = $('#ctr'), v = sel.value;
+      if (D && D.counters && D.counters.length) {
+        sel.innerHTML = D.counters.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+        if (v && D.counters.some(c => String(c.id) === String(v))) sel.value = v;
+      }
+      draw();
+    }
+    gate();
+  </script>
+</body>
+
+</html>

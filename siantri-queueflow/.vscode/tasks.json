@@ -1,0 +1,14 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Jalankan SIAntri",
+      "type": "shell",
+      "command": "python -m http.server 8080",
+      "options": { "cwd": "${workspaceFolder}/web" },
+      "isBackground": true,
+      "problemMatcher": { "pattern": { "regexp": "^$" }, "background": { "activelyWatching": true, "beginsPattern": "Serving", "endsPattern": "Serving" } },
+      "group": { "kind": "build", "isDefault": true }
+    }
+  ]
+}

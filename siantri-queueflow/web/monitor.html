@@ -1,0 +1,32 @@
+<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet"><link rel="stylesheet" href="style.css"><title>Monitor Antrean</title></head><body><div class="wrap" style="max-width:1200px">
+<div id="nav"></div>
+<div class="row" style="justify-content:space-between"><h1>Sedang dilayani</h1><button class="btn ghost" id="snd" onclick="enableSound()">Aktifkan suara panggilan</button></div>
+<div class="grid" id="cts" style="margin:20px 0"></div>
+<div class="grid"><div class="card"><h3>Menunggu per layanan</h3><ul class="list" id="wait"></ul></div><div class="card"><h3>Panggilan terakhir</h3><ul class="list" id="recent"></ul></div></div></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="config.js"></script><script src="app.js"></script>
+<script>
+document.getElementById('nav').innerHTML = nav('monitor');
+let sound=false; const seen={};
+function enableSound(){ sound=true; $('#snd').textContent='Suara aktif'; speak('Suara panggilan aktif'); }
+function speak(t){
+  if(!sound || !window.speechSynthesis) return;
+  const u = new SpeechSynthesisUtterance(t);
+  u.lang = 'id-ID';
+  u.rate = 0.9;
+  speechSynthesis.speak(u);
+}
+live(async()=>{
+  const D = await load();
+  if(!D) return;
+  $('#cts').innerHTML = (D.counters || []).map(c=>{
+    const cur = (D.tickets || []).filter(t=>String(t.counter_id)===String(c.id)&&t.status==='called').pop();
+    const key = cur ? cur.id+cur.called_at : '';
+    if(seen[c.id]!==undefined && key && seen[c.id]!==key) speak('Nomor '+cur.number.split('').join(' ')+', silakan menuju '+c.name);
+    seen[c.id]=key;
+    return `<div class="card ${cur?'now':''}"><p class="mu">${c.name}</p><div class="big">${cur?cur.number:'—'}</div><span class="pill ${cur?'called':''}">${cur?'Dilayani':'Kosong'}</span></div>`;
+  }).join('');
+  $('#wait').innerHTML = (D.services || []).map(s=>`<li><span>${s.code} · ${s.name}</span><b>${waitingOf(D,s.id).length}</b></li>`).join('');
+  const rec = (D.tickets || []).filter(t=>t.called_at).sort((a,b)=>b.called_at.localeCompare(a.called_at)).slice(0,6);
+  $('#recent').innerHTML = rec.map(t=>`<li><span>${t.number}</span><span class="mu">${((D.counters||[]).find(c=>String(c.id)===String(t.counter_id))||{}).name||'-'} · ${LABEL[t.status]||t.status}</span></li>`).join('') || '<li class="mu">Belum ada panggilan hari ini.</li>';
+});
+</script></body></html>

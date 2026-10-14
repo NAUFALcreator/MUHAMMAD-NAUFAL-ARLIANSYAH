@@ -1,0 +1,119 @@
+<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet"><link rel="stylesheet" href="style.css"><title>Masuk / Daftar — SIAntri</title></head><body><div class="wrap">
+<div id="nav"></div>
+<div class="auth-wrap">
+  <div class="auth-card">
+    <div class="auth-tabs">
+      <button class="auth-tab active" id="tabLogin" onclick="switchTab('login')">Masuk</button>
+      <button class="auth-tab" id="tabRegister" onclick="switchTab('register')">Daftar Baru</button>
+    </div>
+
+    <!-- LOGIN FORM -->
+    <div id="formLogin">
+      <h1>Selamat datang kembali</h1>
+      <p class="sub">Masuk untuk mengambil nomor antrean dan melihat riwayat.</p>
+      <label class="field">Email</label>
+      <input id="loginEmail" type="email" placeholder="nama@email.com">
+      <label class="field">Kata sandi</label>
+      <input id="loginPass" type="password" placeholder="Masukkan kata sandi">
+      <button class="btn" onclick="doLogin()">Masuk</button>
+      <div class="demo-hint" id="demoHint" hidden>
+        💡 <b>Mode Demo Aktif</b> — Pilih akun untuk isi otomatis:
+        <div class="row" style="gap:8px;margin-top:8px">
+          <button type="button" class="btn ghost" style="font-size:12px;padding:6px 10px" onclick="fillDemo('pelanggan')">👤 Pelanggan</button>
+          <button type="button" class="btn ghost" style="font-size:12px;padding:6px 10px" onclick="fillDemo('petugas')">💼 Petugas</button>
+          <button type="button" class="btn ghost" style="font-size:12px;padding:6px 10px" onclick="fillDemo('admin')">👑 Admin</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- REGISTER FORM -->
+    <div id="formRegister" hidden>
+      <h1>Buat akun baru</h1>
+      <p class="sub">Daftar gratis untuk mulai mengambil antrean digital.</p>
+      <label class="field">Nama lengkap</label>
+      <input id="regName" type="text" placeholder="Nama Anda">
+      <label class="field">Email</label>
+      <input id="regEmail" type="email" placeholder="nama@email.com">
+      <label class="field">No. HP / WhatsApp (opsional)</label>
+      <input id="regPhone" type="tel" placeholder="08xxxxxxxxxx">
+      <label class="field">Kata sandi</label>
+      <input id="regPass" type="password" placeholder="Minimal 6 karakter">
+      <label class="field">Ulangi kata sandi</label>
+      <input id="regPass2" type="password" placeholder="Ketik ulang kata sandi">
+      <button class="btn" onclick="doRegister()">Daftar Sekarang</button>
+    </div>
+  </div>
+</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="config.js"></script><script src="app.js"></script>
+<script>
+document.getElementById('nav').innerHTML = nav('login');
+
+// If already logged in as customer, redirect
+if (getCustomerSession()) { location.href = 'index.html'; }
+
+// Show demo hint
+if (isDemo) {
+  document.getElementById('demoHint').hidden = false;
+  fillDemo('pelanggan');
+}
+
+function fillDemo(type) {
+  if (type === 'pelanggan') {
+    document.getElementById('loginEmail').value = 'pelanggan@siantri.com';
+    document.getElementById('loginPass').value = 'pelanggan123';
+  } else if (type === 'petugas') {
+    document.getElementById('loginEmail').value = 'petugas@siantri.com';
+    document.getElementById('loginPass').value = 'petugas123';
+  } else if (type === 'admin') {
+    document.getElementById('loginEmail').value = 'admin@siantri.com';
+    document.getElementById('loginPass').value = 'admin123';
+  }
+}
+
+function switchTab(tab) {
+  const isLogin = tab === 'login';
+  document.getElementById('formLogin').hidden = !isLogin;
+  document.getElementById('formRegister').hidden = isLogin;
+  document.getElementById('tabLogin').classList.toggle('active', isLogin);
+  document.getElementById('tabRegister').classList.toggle('active', !isLogin);
+}
+
+async function doLogin() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const pass = document.getElementById('loginPass').value;
+  if (!email || !pass) return toast('Harap isi email dan kata sandi');
+
+  if (email === 'petugas@siantri.com' || email === 'admin@siantri.com') {
+    const { error } = await sb.auth.signInWithPassword({ email, password: pass });
+    if (error) return toast('Login gagal: ' + error.message, 'bad');
+    toast('Berhasil masuk sebagai Petugas! Mengalihkan ke panel...');
+    setTimeout(() => { location.href = 'admin.html'; }, 600);
+    return;
+  }
+
+  const result = customerLogin(email, pass);
+  if (result.error) return toast(result.error, 'bad');
+  toast('Berhasil masuk! Selamat datang, ' + result.data.name, 'ok');
+  setTimeout(() => { location.href = 'index.html'; }, 600);
+}
+
+function doRegister() {
+  const name = document.getElementById('regName').value.trim();
+  const email = document.getElementById('regEmail').value.trim();
+  const phone = document.getElementById('regPhone').value.trim();
+  const pass = document.getElementById('regPass').value;
+  const pass2 = document.getElementById('regPass2').value;
+  if (!name || !email || !pass) return toast('Nama, email, dan kata sandi wajib diisi');
+  if (pass.length < 6) return toast('Kata sandi minimal 6 karakter');
+  if (pass !== pass2) return toast('Kata sandi tidak cocok');
+  const result = customerRegister(name, email, phone, pass);
+  if (result.error) return toast(result.error);
+  toast('Akun berhasil dibuat! Selamat datang, ' + result.data.name);
+  setTimeout(() => { location.href = 'index.html'; }, 800);
+}
+
+// Enter key support
+document.querySelectorAll('#formLogin input').forEach(el => el.addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); }));
+document.querySelectorAll('#formRegister input').forEach(el => el.addEventListener('keydown', e => { if(e.key==='Enter') doRegister(); }));
+</script></body></html>

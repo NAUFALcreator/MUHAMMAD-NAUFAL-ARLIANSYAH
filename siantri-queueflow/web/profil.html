@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <title>Profil Pengguna — SIAntri</title>
+</head>
+
+<body>
+  <div class="wrap">
+    <div id="nav"></div>
+    <div class="auth-wrap" style="max-width:540px">
+      <div class="auth-card">
+        <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px">
+          <div
+            style="width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,var(--a),var(--b));display:flex;align-items:center;justify-content:center;font-size:32px">
+            👤</div>
+          <div>
+            <h1 id="profName" style="font-size:24px;margin-bottom:2px">Pengguna</h1>
+            <p class="mu" id="profEmail">user@siantri.com</p>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:20px;padding:16px">
+          <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--bd)">
+            <span class="mu">Nomor WhatsApp / HP</span>
+            <b id="profPhone">—</b>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:6px 0">
+            <span class="mu">Status Akun</span>
+            <span class="pill called">Aktif</span>
+          </div>
+        </div>
+
+        <h2>Tiket Saya</h2>
+        <div id="activeTicketBox" style="margin:14px 0"></div>
+
+        <h3 style="margin-top:20px;margin-bottom:10px">Riwayat Antrean</h3>
+        <ul class="list" id="profHistory"></ul>
+
+        <div class="row" style="margin-top:24px;justify-content:space-between">
+          <a href="index.html" class="btn" style="text-decoration:none">Ambil Nomor Antrean</a>
+          <button class="btn bad" onclick="customerLogout();location.href='index.html'">Keluar Akun</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+  <script>
+    document.getElementById('nav').innerHTML = nav('profil');
+    const cust = getCustomerSession();
+    if (!cust) {
+      location.href = 'login.html';
+    } else {
+      document.getElementById('profName').textContent = cust.name;
+      document.getElementById('profEmail').textContent = cust.email;
+      document.getElementById('profPhone').textContent = cust.phone || 'Belum diatur';
+
+      live(renderProfile);
+    }
+
+    async function renderProfile() {
+      const D = await load();
+      const myTicketId = localStorage.getItem('siantri_ticket');
+      const myTicket = myTicketId ? D.tickets.find(t => t.id === myTicketId) : null;
+      const box = document.getElementById('activeTicketBox');
+
+      if (myTicket && (myTicket.status === 'waiting' || myTicket.status === 'called')) {
+        const s = D.services.find(x => x.id === myTicket.service_id) || {};
+        box.innerHTML = `
+      <div class="card now" style="text-align:center;padding:18px">
+        <span class="pill ${myTicket.status}">${LABEL[myTicket.status]}</span>
+        <div class="big" style="margin:6px 0">${myTicket.number}</div>
+        <p class="mu">${s.name || ''}</p>
+        <div style="margin-top:12px">
+          <a href="index.html" class="btn ok" style="display:inline-block;text-decoration:none;font-size:13px">Lihat Status Tiket</a>
+        </div>
+      </div>`;
+      } else {
+        box.innerHTML = `<p class="mu">Tidak ada antrean yang sedang aktif.</p>`;
+      }
+
+      // Riwayat
+      const historyList = document.getElementById('profHistory');
+      const finished = D.tickets.filter(t => t.status === 'done' || t.status === 'cancelled' || t.status === 'skipped');
+      if (finished.length === 0) {
+        historyList.innerHTML = '<li class="mu">Belum ada riwayat antrean.</li>';
+      } else {
+        historyList.innerHTML = finished.slice(0, 6).map(t => {
+          const s = D.services.find(x => x.id === t.service_id) || {};
+          const time = new Date(t.created_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+          return `<li><span><b>${t.number}</b> · ${s.name || '—'}</span><span><span class="pill ${t.status}">${LABEL[t.status]}</span> <span class="mu" style="font-size:12px;margin-left:6px">${time}</span></span></li>`;
+        }).join('');
+      }
+    }
+  </script>
+</body>
+
+</html>
